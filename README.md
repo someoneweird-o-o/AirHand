@@ -15,3 +15,5 @@ Designed for touchless interaction, gaming, and creative expression, AirHands co
 🎨 Pro Air Whiteboard: A responsive digital canvas equipped with fine pens, markers, glowing highlighters, erasers, stroke size sliders, color palettes, and single-click PNG canvas export.
 
 🖥️ Immersive Workspace: Clean, glassmorphic virtual desktop interface featuring expandable window containers, customizable tracking sensitivity sliders, real-time FPS counters, and synthesized Web Audio sound effects.
+
+LIVE PREVIEW: https://someoneweird-o-o.github.io/AirHand/
