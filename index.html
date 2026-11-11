@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>AirHand - Virtual Desktop</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- MediaPipe Hands CDN Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        :root {
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+            --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+        }
+
+        html, body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #000000;
+            color: #f5f5f7;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            touch-action: pan-y;
+            overflow-x: hidden;
+            overflow-y: auto;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Apple-inspired Minimalist Glass & Surfaces */
+        .glass-panel {
+            background: rgba(22, 22, 23, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+        }
+
+        .glass-window {
+            background: rgba(28, 28, 30, 0.85);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+            transition: transform 250ms var(--ease-out), opacity 250ms var(--ease-out), box-shadow 200ms var(--ease-out);
+            will-change: transform, opacity;
+            border-radius: 16px;
+        }
+
+        /* Minimalist Logo Styling */
+        .apple-logo-icon {
+            width: 22px;
+            height: 22px;
+            fill: currentColor;
+            display: inline-block;
+        }
+
+        /* Virtual Hand Cursors */
+        .virtual-cursor {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%) scale(1);
+            transition: transform 140ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out);
+            will-change: transform, left, top;
+        }
+
+        #cursor-hand-1 {
+            border: 2px solid #0a84ff;
+            background-color: rgba(10, 132, 255, 0.25);
+            box-shadow: 0 0 12px rgba(10, 132, 255, 0.4);
+        }
+
+        #cursor-hand-2 {
+            border: 2px solid #ff375f;
+            background-color: rgba(255, 55, 95, 0.25);
+            box-shadow: 0 0 12px rgba(255, 55, 95, 0.4);
+        }
+
+        .virtual-cursor.clicking {
+            transform: translate(-50%, -50%) scale(0.75);
+            background-color: rgba(255, 69, 58, 0.9) !important;
+            border-color: #ff453a !important;
+            box-shadow: 0 0 20px #ff453a;
+        }
+
+        .virtual-cursor.hidden-cursor {
+            display: none !important;
+        }
+
+        /* Micro-interactions & Buttons */
+        .btn-interactive {
+            transition: transform 140ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out);
+            will-change: transform;
+        }
+        .btn-interactive:active {
+            transform: scale(0.96);
+        }
+
+        @media (hover: hover) and (pointer: fine) {
+            .btn-interactive:hover {
+                transform: translateY(-1px);
+            }
+        }
+
+        .mirror {
+            transform: scaleX(-1);
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        .window-header {
+            cursor: move;
+        }
+
+        .fullscreen-exit-btn {
+            display: none;
+        }
+        .fixed .fullscreen-exit-btn {
+            display: flex;
+        }
+
+        .desktop-window {
+            opacity: 0;
+            transform: translateY(12px) scale(0.98);
+            animation: windowEntrance 300ms var(--ease-out) forwards;
+        }
+        #window-shooter { animation-delay: 40ms; }
+        #window-pong { animation-delay: 90ms; }
+        #window-paint { animation-delay: 140ms; }
+        #window-terminal { animation-delay: 190ms; }
+
+        @keyframes windowEntrance {
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .desktop-window, .glass-window, .virtual-cursor, .btn-interactive {
+                animation: none !important;
+                transition: opacity 150ms ease !important;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .desktop-window {
+                position: absolute !important;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen w-full flex flex-col justify-between p-3 sm:p-5 bg-black relative">
+
+    <!-- Subtle Clean Background Glow Effect -->
+    <div class="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-black to-black pointer-events-none"></div>
+
+    <!-- Dual Virtual Cursors -->
+    <div id="cursor-hand-1" class="virtual-cursor w-7 h-7 rounded-full flex items-center justify-center">
+        <div class="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+        <span class="absolute -top-4 text-[9px] font-mono text-blue-400 font-semibold tracking-wider">H1</span>
+    </div>
+    <div id="cursor-hand-2" class="virtual-cursor w-7 h-7 rounded-full flex items-center justify-center">
+        <div class="w-1.5 h-1.5 bg-rose-400 rounded-full"></div>
+        <span class="absolute -top-4 text-[9px] font-mono text-rose-400 font-semibold tracking-wider">H2</span>
+    </div>
+
+    <!-- Apple-inspired Minimalist Header Navigation Bar -->
+    <header class="glass-panel rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 z-20 sticky top-3">
+        <div class="flex items-center gap-3">
+            <!-- Minimalist Apple-Style Hand Logo Icon -->
+            <div class="w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700/60 flex items-center justify-center shadow-inner">
+                <svg class="apple-logo-icon text-zinc-100" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2C10.5 2 9 3.5 9 5V12C9 13.1 8.1 14 7 14C5.9 14 5 13.1 5 12V7C5 5.9 4.1 5 3 5C1.9 5 1 5.9 1 7V12C1 15.3 3.4 18 6.5 18.8V21C6.5 21.6 7 22 7.5 22C8 22 8.5 21.6 8.5 21V18.8C10.2 19.3 12 19.3 13.5 18.8V21C13.5 21.6 14 22 14.5 22C15 22 15.5 21.6 15.5 21V18.8C18.6 18 21 15.3 21 12V9C21 7.9 20.1 7 19 7C17.9 7 17 7.9 17 9V12C17 13.1 16.1 14 15 14C13.9 14 13 13.1 13 12V5C13 3.5 13.5 2 12 2Z"/>
+                </svg>
+            </div>
+            <div>
+                <h1 class="font-semibold text-sm sm:text-base tracking-tight text-zinc-100">AirHand</h1>
+                <p class="text-[11px] text-zinc-400 font-normal">Spatial Gesture Desktop</p>
+            </div>
+        </div>
+
+        <!-- Mode Selector & Controls -->
+        <div class="flex items-center flex-wrap gap-2.5">
+            <div class="flex items-center bg-zinc-900/90 border border-zinc-800 rounded-xl p-0.5 text-xs">
+                <button id="mode-1hand-btn" class="btn-interactive px-3 py-1 rounded-lg text-zinc-400 font-medium">1-Hand</button>
+                <button id="mode-2hands-btn" class="btn-interactive px-3 py-1 rounded-lg bg-zinc-700 text-zinc-100 font-medium shadow-sm">2-Hands</button>
+            </div>
+
+            <div class="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-xs">
+                <span class="text-zinc-400">H1:</span>
+                <span id="gesture-badge-1" class="font-mono text-blue-400 font-medium">Initializing</span>
+            </div>
+            <div id="h2-status-container" class="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-xs">
+                <span class="text-zinc-400">H2:</span>
+                <span id="gesture-badge-2" class="font-mono text-rose-400 font-medium">Initializing</span>
+            </div>
+
+            <button id="toggle-camera-btn" class="btn-interactive px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm">
+                <i class="fa-solid fa-video text-[10px]"></i> Cam
+            </button>
+            <button id="fullscreen-btn" class="btn-interactive px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/60 text-xs" title="Maximize Workspace">
+                <i class="fa-solid fa-expand"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Desktop Virtual Workspace -->
+    <main id="virtual-desktop" class="relative flex-1 my-3 grid grid-cols-12 gap-3 z-10">
+
+        <!-- Sidebar: Video Feed & Calibration Controls -->
+        <section class="col-span-12 lg:col-span-4 flex flex-col gap-3">
+            <div class="glass-window p-3.5 flex flex-col relative overflow-hidden">
+                <div class="flex justify-between items-center mb-2.5">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-camera text-blue-400 text-xs"></i>
+                        <span class="font-medium text-xs text-zinc-200">Neural Hand Tracking</span>
+                    </div>
+                    <span id="fps-counter" class="text-[11px] font-mono text-blue-400 bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-900/50">FPS: 0</span>
+                </div>
+
+                <div class="relative w-full h-48 sm:h-56 bg-zinc-950 rounded-xl overflow-hidden border border-zinc-800/80 flex items-center justify-center">
+                    <video id="webcam" class="hidden" playsinline muted></video>
+                    <canvas id="output-canvas" class="w-full h-full object-cover mirror"></canvas>
+                </div>
+
+                <!-- Calibration Controls Panel -->
+                <div class="mt-3 p-3 rounded-xl bg-zinc-900/50 border border-zinc-800/60 flex flex-col gap-2.5">
+                    <div class="flex items-center justify-between text-xs">
+                        <label for="smoothing-slider" class="text-zinc-300 font-medium">Cursor Smoothing:</label>
+                        <span id="smoothing-val" class="font-mono text-blue-400 font-semibold">0.35</span>
+                    </div>
+                    <input type="range" id="smoothing-slider" min="0.05" max="0.9" step="0.05" value="0.35" class="w-full accent-blue-500 bg-zinc-800 rounded h-1 cursor-pointer">
+
+                    <div class="flex items-center justify-between text-xs">
+                        <label for="pinch-threshold-slider" class="text-zinc-300 font-medium">Pinch Sensitivity:</label>
+                        <span id="pinch-val" class="font-mono text-indigo-400 font-semibold">0.05</span>
+                    </div>
+                    <input type="range" id="pinch-threshold-slider" min="0.02" max="0.12" step="0.01" value="0.05" class="w-full accent-indigo-500 bg-zinc-800 rounded h-1 cursor-pointer">
+                </div>
+            </div>
+        </section>
+
+        <!-- Interactive Virtual Desktop Windows -->
+        <section class="col-span-12 lg:col-span-8 relative rounded-2xl border border-zinc-800/60 bg-zinc-950/20 p-2 sm:p-3 min-h-[600px] flex flex-col gap-3 lg:block" id="desktop-area">
+
+            <!-- Window 1: Game - Laser Space Target Shooter -->
+            <div id="window-shooter" class="desktop-window glass-window w-full lg:w-96 flex flex-col z-10 lg:top-2 lg:left-2">
+                <div class="window-header px-3.5 py-2.5 bg-zinc-900/70 border-b border-zinc-800/60 flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-crosshairs text-rose-400 text-xs"></i>
+                        <span class="text-xs font-medium text-zinc-200">Space Target Shooter</span>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-[11px] font-mono text-rose-400 font-bold" id="shooter-score">Score: 0</span>
+                        <button id="fullscreen-shooter-btn" class="btn-interactive text-zinc-400 hover:text-white text-xs px-1" title="Fullscreen">
+                            <i class="fa-solid fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-3 flex flex-col gap-2.5 flex-1 relative">
+                    <button id="exit-shooter-fullscreen" class="fullscreen-exit-btn btn-interactive absolute top-4 right-4 z-50 bg-rose-600/90 hover:bg-rose-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-lg items-center gap-2">
+                        <i class="fa-solid fa-compress"></i> Exit Fullscreen
+                    </button>
+                    <canvas id="shooter-canvas" width="360" height="200" class="w-full h-48 bg-zinc-950 rounded-xl border border-zinc-800/80 touch-none"></canvas>
+                    <div class="flex justify-between items-center">
+                        <span class="text-[11px] text-zinc-400">Pinch or tap targets to blast</span>
+                        <button id="start-shooter-btn" class="btn-interactive px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium">Restart</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Window 2: Game - Brick Breaker -->
+            <div id="window-pong" class="desktop-window glass-window w-full lg:w-96 flex flex-col z-10 lg:top-8 lg:right-2">
+                <div class="window-header px-3.5 py-2.5 bg-zinc-900/70 border-b border-zinc-800/60 flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-table-tennis-paddle-ball text-emerald-400 text-xs"></i>
+                        <span id="pong-title" class="text-xs font-medium text-zinc-200">Dual-Hand Brick Breaker</span>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-[11px] font-mono text-emerald-400 font-bold" id="pong-score">Score: 0</span>
+                        <button id="fullscreen-pong-btn" class="btn-interactive text-zinc-400 hover:text-white text-xs px-1" title="Fullscreen">
+                            <i class="fa-solid fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-3 flex flex-col gap-2.5 flex-1 relative">
+                    <button id="exit-pong-fullscreen" class="fullscreen-exit-btn btn-interactive absolute top-4 right-4 z-50 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-lg items-center gap-2">
+                        <i class="fa-solid fa-compress"></i> Exit Fullscreen
+                    </button>
+                    <canvas id="pong-canvas" width="360" height="200" class="w-full h-48 bg-zinc-950 rounded-xl border border-zinc-800/80 touch-none"></canvas>
+                    <div class="flex justify-between items-center">
+                        <span id="pong-subtitle" class="text-[11px] text-zinc-400">H1/H2 move paddles up & down</span>
+                        <button id="start-pong-btn" class="btn-interactive px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium">Start / Reset</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Window 3: Multi-Tool Whiteboard -->
+            <div id="window-paint" class="desktop-window glass-window w-full lg:w-96 flex flex-col z-10 lg:bottom-2 lg:left-2">
+                <div class="window-header px-3.5 py-2.5 bg-zinc-900/70 border-b border-zinc-800/60 flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-pen-ruler text-sky-400 text-xs"></i>
+                        <span class="text-xs font-medium text-zinc-200">Air Whiteboard</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <button id="download-paint-btn" class="btn-interactive px-2.5 py-1 rounded-lg bg-sky-950 hover:bg-sky-900 text-xs text-sky-200 border border-sky-800 flex items-center gap-1">
+                            <i class="fa-solid fa-download"></i> Save
+                        </button>
+                        <button id="clear-paint-btn" class="btn-interactive px-2 py-1 rounded-lg bg-zinc-800 text-xs text-zinc-300 hover:bg-zinc-700">Clear</button>
+                        <button id="fullscreen-paint-btn" class="btn-interactive text-zinc-400 hover:text-white text-xs px-1 ml-1" title="Fullscreen">
+                            <i class="fa-solid fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-3 flex flex-col gap-2.5 flex-1 relative">
+                    <button id="exit-paint-fullscreen" class="fullscreen-exit-btn btn-interactive absolute top-4 right-4 z-50 bg-sky-600/90 hover:bg-sky-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-lg items-center gap-2">
+                        <i class="fa-solid fa-compress"></i> Exit Fullscreen
+                    </button>
+                    
+                    <!-- Whiteboard Tool Selector Bar -->
+                    <div class="flex flex-wrap items-center justify-between bg-zinc-900/70 p-1.5 rounded-xl border border-zinc-800/80 gap-1">
+                        <div class="flex items-center gap-1" id="whiteboard-tools">
+                            <button data-tool="pen" class="wb-tool-btn btn-interactive px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-medium flex items-center gap-1">
+                                <i class="fa-solid fa-pen"></i> Pen
+                            </button>
+                            <button data-tool="marker" class="wb-tool-btn btn-interactive px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-xs flex items-center gap-1">
+                                <i class="fa-solid fa-marker"></i> Marker
+                            </button>
+                            <button data-tool="highlighter" class="wb-tool-btn btn-interactive px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-xs flex items-center gap-1">
+                                <i class="fa-solid fa-highlighter"></i> Glow
+                            </button>
+                            <button data-tool="eraser" class="wb-tool-btn btn-interactive px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-xs flex items-center gap-1">
+                                <i class="fa-solid fa-eraser"></i> Eraser
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-1.5 text-xs">
+                            <i class="fa-solid fa-circle-dot text-zinc-400 text-[10px]"></i>
+                            <input type="range" id="brush-size" min="2" max="30" value="4" class="w-14 accent-blue-500 bg-zinc-800 rounded h-1 cursor-pointer">
+                        </div>
+                    </div>
+
+                    <!-- Color Palette -->
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-2" id="color-picker-group">
+                            <button data-color="#ffffff" class="btn-interactive w-5 h-5 rounded-full bg-white ring-2 ring-white/20"></button>
+                            <button data-color="#0a84ff" class="btn-interactive w-5 h-5 rounded-full bg-blue-500 ring-2 ring-white/20"></button>
+                            <button data-color="#ff375f" class="btn-interactive w-5 h-5 rounded-full bg-rose-500 ring-2 ring-white/20"></button>
+                            <button data-color="#30d158" class="btn-interactive w-5 h-5 rounded-full bg-emerald-500 ring-2 ring-white/20"></button>
+                            <button data-color="#ff9f0a" class="btn-interactive w-5 h-5 rounded-full bg-amber-500 ring-2 ring-white/20"></button>
+                            <button data-color="#bf5af2" class="btn-interactive w-5 h-5 rounded-full bg-purple-500 ring-2 ring-white/20"></button>
+                        </div>
+                        <span class="text-[10px] text-zinc-400 font-mono">Pinch / Touch to draw</span>
+                    </div>
+
+                    <canvas id="paint-canvas" width="360" height="180" class="w-full h-40 bg-zinc-950 rounded-xl border border-zinc-800/80 touch-none"></canvas>
+                </div>
+            </div>
+
+            <!-- Window 4: System Terminal Logs -->
+            <div id="window-terminal" class="desktop-window glass-window w-full lg:w-80 flex flex-col z-10 lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2">
+                <div class="window-header px-3.5 py-2 bg-zinc-900/70 border-b border-zinc-800/60 flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-terminal text-emerald-400 text-xs"></i>
+                        <span class="text-xs font-medium text-zinc-300">System Logs</span>
+                    </div>
+                </div>
+                <div class="p-2.5 font-mono text-[11px] bg-zinc-950/90 rounded-b-xl text-zinc-400 h-24 overflow-y-auto flex flex-col gap-1" id="terminal-logs">
+                    <p class="text-emerald-400">[SYSTEM]: AirHand Tracking Engine Active.</p>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Audio Synthesizer Script -->
+    <script>
+        class AudioFeedback {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playClick() {
+                if (!this.enabled) return;
+                this.init();
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.05);
+
+                gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.05);
+            }
+
+            playPop() {
+                if (!this.enabled) return;
+                this.init();
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(200, this.ctx.currentTime + 0.08);
+
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.08);
+            }
+        }
+
+        const soundFX = new AudioFeedback();
+    </script>
+
+    <!-- Hand Tracking Engine & Mode Management -->
+    <script>
+        const webcamElement = document.getElementById('webcam');
+        const outputCanvas = document.getElementById('output-canvas');
+        const canvasCtx = outputCanvas.getContext('2d');
+
+        const cursorH1 = document.getElementById('cursor-hand-1');
+        const cursorH2 = document.getElementById('cursor-hand-2');
+        const badgeH1 = document.getElementById('gesture-badge-1');
+        const badgeH2 = document.getElementById('gesture-badge-2');
+        const h2StatusContainer = document.getElementById('h2-status-container');
+        const fpsCounter = document.getElementById('fps-counter');
+        const terminalLogs = document.getElementById('terminal-logs');
+
+        let cameraInstance = null;
+        let isCameraActive = false;
+        let trackingMode = 2; // 2 = Two Hands, 1 = One Hand
+
+        const handsState = [
+            { rawX: window.innerWidth / 3, rawY: window.innerHeight / 2, smoothX: window.innerWidth / 3, smoothY: window.innerHeight / 2, isPinching: false, cursorEl: cursorH1, badgeEl: badgeH1 },
+            { rawX: (window.innerWidth * 2) / 3, rawY: window.innerHeight / 2, smoothX: (window.innerWidth * 2) / 3, smoothY: window.innerHeight / 2, isPinching: false, cursorEl: cursorH2, badgeEl: badgeH2 }
+        ];
+
+        let smoothingFactor = 0.35;
+        let pinchThreshold = 0.05;
+
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+
+        function logTerminal(message, type = 'info') {
+            const p = document.createElement('p');
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            p.className = type === 'success' ? 'text-emerald-400' : (type === 'warn' ? 'text-amber-400' : 'text-blue-400');
+            p.textContent = `[${time}]: ${message}`;
+            terminalLogs.appendChild(p);
+            terminalLogs.scrollTop = terminalLogs.scrollHeight;
+        }
+
+        function calculateDistance(lm1, lm2) {
+            const dx = lm1.x - lm2.x;
+            const dy = lm1.y - lm2.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function lerp(start, end, amt) {
+            return (1 - amt) * start + amt * end;
+        }
+
+        function detectGesture(landmarks) {
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const pinchDist = calculateDistance(thumbTip, indexTip);
+
+            if (pinchDist < pinchThreshold) {
+                return { type: 'PINCH' };
+            }
+            return { type: 'POINTER' };
+        }
+
+        function onHandResults(results) {
+            const now = performance.now();
+            frameCount++;
+            if (now - lastFrameTime >= 1000) {
+                fpsCounter.textContent = `FPS: ${frameCount}`;
+                frameCount = 0;
+                lastFrameTime = now;
+            }
+
+            outputCanvas.width = webcamElement.videoWidth || 640;
+            outputCanvas.height = webcamElement.videoHeight || 480;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+            canvasCtx.drawImage(results.image, 0, 0, outputCanvas.width, outputCanvas.height);
+
+            const activeHandsCount = trackingMode === 1 ? 1 : 2;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                results.multiHandLandmarks.forEach((landmarks, index) => {
+                    if (index >= activeHandsCount) return;
+
+                    const color = index === 0 ? '#0a84ff' : '#ff375f';
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: color, lineWidth: 2 });
+                    drawLandmarks(canvasCtx, landmarks, { color: '#ffffff', lineWidth: 1, radius: 2.5 });
+
+                    const hand = handsState[index];
+                    const mirroredX = 1 - landmarks[8].x;
+                    hand.rawX = mirroredX * window.innerWidth;
+                    hand.rawY = landmarks[8].y * window.innerHeight;
+
+                    const gesture = detectGesture(landmarks);
+
+                    if (gesture.type === 'PINCH') {
+                        hand.badgeEl.textContent = 'CLICK';
+                        if (!hand.isPinching) {
+                            hand.isPinching = true;
+                            hand.cursorEl.classList.add('clicking');
+                            soundFX.playClick();
+                            triggerVirtualClick(hand.smoothX, hand.smoothY);
+                        }
+                    } else {
+                        hand.badgeEl.textContent = 'TRACKING';
+                        if (hand.isPinching) {
+                            hand.isPinching = false;
+                            hand.cursorEl.classList.remove('clicking');
+                        }
+                    }
+                });
+
+                if (results.multiHandLandmarks.length < activeHandsCount && trackingMode === 2) {
+                    handsState[1].badgeEl.textContent = 'NO HAND';
+                }
+            } else {
+                handsState[0].badgeEl.textContent = 'NO HAND';
+                if (trackingMode === 2) {
+                    handsState[1].badgeEl.textContent = 'NO HAND';
+                }
+            }
+
+            canvasCtx.restore();
+        }
+
+        function renderLoop() {
+            const activeHandsCount = trackingMode === 1 ? 1 : 2;
+
+            handsState.forEach((hand, index) => {
+                if (index >= activeHandsCount) {
+                    hand.cursorEl.classList.add('hidden-cursor');
+                    return;
+                } else {
+                    hand.cursorEl.classList.remove('hidden-cursor');
+                }
+
+                hand.smoothX = lerp(hand.smoothX, hand.rawX, smoothingFactor);
+                hand.smoothY = lerp(hand.smoothY, hand.rawY, smoothingFactor);
+
+                hand.cursorEl.style.left = `${hand.smoothX}px`;
+                hand.cursorEl.style.top = `${hand.smoothY}px`;
+            });
+
+            updateShooterGame();
+            updatePongGame();
+            drawAirCanvas();
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        function triggerVirtualClick(x, y) {
+            const targetEl = document.elementFromPoint(x, y);
+            if (!targetEl) return;
+
+            const btn = targetEl.closest('button');
+            if (btn) {
+                btn.click();
+            }
+        }
+
+        // --- Game 1: Space Target Shooter ---
+        const shooterCanvas = document.getElementById('shooter-canvas');
+        const shooterCtx = shooterCanvas.getContext('2d');
+        let shooterTargets = [];
+        let shooterScore = 0;
+
+        function initShooterGame() {
+            shooterScore = 0;
+            document.getElementById('shooter-score').textContent = `Score: ${shooterScore}`;
+            shooterTargets = [];
+            for (let i = 0; i < 4; i++) spawnShooterTarget();
+        }
+
+        function spawnShooterTarget() {
+            shooterTargets.push({
+                x: Math.random() * (shooterCanvas.width - 30) + 15,
+                y: Math.random() * (shooterCanvas.height - 30) + 15,
+                radius: 12 + Math.random() * 8,
+                dx: (Math.random() - 0.5) * 2,
+                dy: (Math.random() - 0.5) * 2
+            });
+        }
+
+        function updateShooterGame() {
+            shooterCtx.fillStyle = '#09090b';
+            shooterCtx.fillRect(0, 0, shooterCanvas.width, shooterCanvas.height);
+
+            shooterTargets.forEach((t, index) => {
+                t.x += t.dx;
+                t.y += t.dy;
+                if (t.x < 10 || t.x > shooterCanvas.width - 10) t.dx *= -1;
+                if (t.y < 10 || t.y > shooterCanvas.height - 10) t.dy *= -1;
+
+                shooterCtx.beginPath();
+                shooterCtx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
+                shooterCtx.fillStyle = '#ff375f';
+                shooterCtx.fill();
+                shooterCtx.strokeStyle = '#ffd1dc';
+                shooterCtx.stroke();
+
+                const rect = shooterCanvas.getBoundingClientRect();
+                const activeHandsCount = trackingMode === 1 ? 1 : 2;
+                
+                handsState.forEach((hand, hIdx) => {
+                    if (hIdx >= activeHandsCount) return;
+                    const hx = (hand.smoothX - rect.left) * (shooterCanvas.width / rect.width);
+                    const hy = (hand.smoothY - rect.top) * (shooterCanvas.height / rect.height);
+
+                    const dist = Math.hypot(hx - t.x, hy - t.y);
+                    if (dist < t.radius + 10 && hand.isPinching) {
+                        shooterScore += 10;
+                        document.getElementById('shooter-score').textContent = `Score: ${shooterScore}`;
+                        soundFX.playPop();
+                        shooterTargets.splice(index, 1);
+                        spawnShooterTarget();
+                    }
+                });
+            });
+        }
+
+        shooterCanvas.addEventListener('touchstart', (e) => {
+            const rect = shooterCanvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const tx = (touch.clientX - rect.left) * (shooterCanvas.width / rect.width);
+            const ty = (touch.clientY - rect.top) * (shooterCanvas.height / rect.height);
+
+            shooterTargets.forEach((t, index) => {
+                const dist = Math.hypot(tx - t.x, ty - t.y);
+                if (dist < t.radius + 15) {
+                    shooterScore += 10;
+                    document.getElementById('shooter-score').textContent = `Score: ${shooterScore}`;
+                    soundFX.playPop();
+                    shooterTargets.splice(index, 1);
+                    spawnShooterTarget();
+                }
+            });
+        });
+
+        // --- Game 2: Brick Breaker ---
+        const pongCanvas = document.getElementById('pong-canvas');
+        const pongCtx = pongCanvas.getContext('2d');
+        let ball = { x: 180, y: 100, dx: 5, dy: 3.5, radius: 6 };
+        let paddle1Y = 80;
+        let paddle2Y = 80;
+        let pongScore = 0;
+
+        function updatePongGame() {
+            pongCtx.fillStyle = '#09090b';
+            pongCtx.fillRect(0, 0, pongCanvas.width, pongCanvas.height);
+
+            const rect = pongCanvas.getBoundingClientRect();
+            
+            paddle1Y = (handsState[0].smoothY - rect.top) * (pongCanvas.height / rect.height) - 20;
+            paddle1Y = Math.max(0, Math.min(pongCanvas.height - 40, paddle1Y));
+            
+            pongCtx.fillStyle = '#0a84ff';
+            pongCtx.fillRect(10, paddle1Y, 8, 40);
+
+            if (trackingMode === 2) {
+                paddle2Y = (handsState[1].smoothY - rect.top) * (pongCanvas.height / rect.height) - 20;
+                paddle2Y = Math.max(0, Math.min(pongCanvas.height - 40, paddle2Y));
+
+                pongCtx.fillStyle = '#ff375f';
+                pongCtx.fillRect(pongCanvas.width - 18, paddle2Y, 8, 40);
+            } else {
+                pongCtx.fillStyle = '#52525b';
+                pongCtx.fillRect(pongCanvas.width - 18, 0, 8, pongCanvas.height);
+            }
+
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            if (ball.y < 5 || ball.y > pongCanvas.height - 5) ball.dy *= -1;
+
+            if (ball.x <= 18 && ball.y >= paddle1Y && ball.y <= paddle1Y + 40) {
+                ball.dx = Math.abs(ball.dx) * 1.04;
+                pongScore++;
+                soundFX.playClick();
+            }
+
+            if (trackingMode === 2) {
+                if (ball.x >= pongCanvas.width - 18 && ball.y >= paddle2Y && ball.y <= paddle2Y + 40) {
+                    ball.dx = -Math.abs(ball.dx) * 1.04;
+                    pongScore++;
+                    soundFX.playClick();
+                }
+            } else {
+                if (ball.x >= pongCanvas.width - 18) {
+                    ball.dx = -Math.abs(ball.dx);
+                    pongScore++;
+                    soundFX.playClick();
+                }
+            }
+
+            if (ball.x < 0 || ball.x > pongCanvas.width) {
+                ball.x = 180;
+                ball.y = 100;
+                ball.dx = (Math.random() > 0.5 ? 1 : -1) * 5;
+                ball.dy = (Math.random() > 0.5 ? 1 : -1) * 3.5;
+            }
+
+            pongCtx.beginPath();
+            pongCtx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            pongCtx.fillStyle = '#ff9f0a';
+            pongCtx.fill();
+
+            document.getElementById('pong-score').textContent = `Score: ${pongScore}`;
+        }
+
+        pongCanvas.addEventListener('touchmove', (e) => {
+            const rect = pongCanvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const ty = (touch.clientY - rect.top) * (pongCanvas.height / rect.height) - 20;
+            paddle1Y = Math.max(0, Math.min(pongCanvas.height - 40, ty));
+        });
+
+        // --- Air Canvas Painting ---
+        const paintCanvas = document.getElementById('paint-canvas');
+        const paintCtx = paintCanvas.getContext('2d');
+        let activePaintColor = '#0a84ff';
+        let activeTool = 'pen';
+        let brushSize = 4;
+        let prevHandPos = [null, null];
+        let isTouchDrawing = false;
+        let lastTouchPos = null;
+
+        function drawAirCanvas() {
+            const rect = paintCanvas.getBoundingClientRect();
+            const activeHandsCount = trackingMode === 1 ? 1 : 2;
+            
+            handsState.forEach((hand, index) => {
+                if (index >= activeHandsCount) return;
+
+                const cx = (hand.smoothX - rect.left) * (paintCanvas.width / rect.width);
+                const cy = (hand.smoothY - rect.top) * (paintCanvas.height / rect.height);
+
+                if (hand.isPinching && cx >= 0 && cx <= paintCanvas.width && cy >= 0 && cy <= paintCanvas.height) {
+                    renderStroke(prevHandPos[index], { x: cx, y: cy });
+                    prevHandPos[index] = { x: cx, y: cy };
+                } else {
+                    prevHandPos[index] = null;
+                }
+            });
+        }
+
+        function renderStroke(startPos, endPos) {
+            paintCtx.beginPath();
+            if (startPos) {
+                paintCtx.moveTo(startPos.x, startPos.y);
+                paintCtx.lineTo(endPos.x, endPos.y);
+            } else {
+                paintCtx.moveTo(endPos.x, endPos.y);
+            }
+
+            if (activeTool === 'eraser') {
+                paintCtx.globalCompositeOperation = 'destination-out';
+                paintCtx.lineWidth = brushSize * 3;
+                paintCtx.lineCap = 'round';
+                paintCtx.stroke();
+            } else {
+                paintCtx.globalCompositeOperation = 'source-over';
+                paintCtx.lineCap = 'round';
+                paintCtx.lineJoin = 'round';
+
+                if (activeTool === 'highlighter') {
+                    paintCtx.strokeStyle = activePaintColor + '55';
+                    paintCtx.lineWidth = brushSize * 2.5;
+                    paintCtx.shadowBlur = 6;
+                    paintCtx.shadowColor = activePaintColor;
+                } else if (activeTool === 'marker') {
+                    paintCtx.strokeStyle = activePaintColor;
+                    paintCtx.lineWidth = brushSize * 1.8;
+                    paintCtx.shadowBlur = 0;
+                } else {
+                    paintCtx.strokeStyle = activePaintColor;
+                    paintCtx.lineWidth = brushSize;
+                    paintCtx.shadowBlur = 0;
+                }
+                
+                paintCtx.stroke();
+            }
+        }
+
+        paintCanvas.addEventListener('touchstart', (e) => {
+            isTouchDrawing = true;
+            const rect = paintCanvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            lastTouchPos = {
+                x: (touch.clientX - rect.left) * (paintCanvas.width / rect.width),
+                y: (touch.clientY - rect.top) * (paintCanvas.height / rect.height)
+            };
+        });
+
+        paintCanvas.addEventListener('touchmove', (e) => {
+            if (!isTouchDrawing) return;
+            const rect = paintCanvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const currentPos = {
+                x: (touch.clientX - rect.left) * (paintCanvas.width / rect.width),
+                y: (touch.clientY - rect.top) * (paintCanvas.height / rect.height)
+            };
+            renderStroke(lastTouchPos, currentPos);
+            lastTouchPos = currentPos;
+        });
+
+        paintCanvas.addEventListener('touchend', () => {
+            isTouchDrawing = false;
+            lastTouchPos = null;
+        });
+
+        document.getElementById('smoothing-slider').addEventListener('input', (e) => {
+            smoothingFactor = parseFloat(e.target.value);
+            document.getElementById('smoothing-val').textContent = smoothingFactor.toFixed(2);
+        });
+
+        document.getElementById('pinch-threshold-slider').addEventListener('input', (e) => {
+            pinchThreshold = parseFloat(e.target.value);
+            document.getElementById('pinch-val').textContent = pinchThreshold.toFixed(2);
+        });
+
+        // --- MediaPipe Hand Setup ---
+        function initMediaPipe() {
+            logTerminal('Initializing AirHand Neural Engine...', 'info');
+
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 2,
+                modelComplexity: window.innerWidth < 768 ? 0 : 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults(onHandResults);
+
+            cameraInstance = new Camera(webcamElement, {
+                onFrame: async () => {
+                    if (isCameraActive) {
+                        await hands.send({ image: webcamElement });
+                    }
+                },
+                width: window.innerWidth < 768 ? 480 : 640,
+                height: window.innerWidth < 768 ? 360 : 480,
+                facingMode: "user"
+            });
+
+            startCamera();
+        }
+
+        function startCamera() {
+            isCameraActive = true;
+            cameraInstance.start().then(() => logTerminal('Camera Active.', 'success')).catch(err => {
+                logTerminal('Camera Error: Access denied or unavailable.', 'warn');
+            });
+        }
+
+        function stopCamera() {
+            isCameraActive = false;
+            if (cameraInstance) cameraInstance.stop();
+            logTerminal('Camera stopped.', 'warn');
+        }
+
+        window.onload = function () {
+            renderLoop();
+            initMediaPipe();
+            initShooterGame();
+
+            const btn1Hand = document.getElementById('mode-1hand-btn');
+            const btn2Hands = document.getElementById('mode-2hands-btn');
+            const pongTitle = document.getElementById('pong-title');
+            const pongSubtitle = document.getElementById('pong-subtitle');
+
+            btn1Hand.addEventListener('click', () => {
+                trackingMode = 1;
+                btn1Hand.className = "btn-interactive px-3 py-1 rounded-lg bg-zinc-700 text-zinc-100 font-medium shadow-sm";
+                btn2Hands.className = "btn-interactive px-3 py-1 rounded-lg text-zinc-400 font-medium";
+                h2StatusContainer.style.display = 'none';
+                pongTitle.textContent = "Single-Hand Ball Breaker";
+                pongSubtitle.textContent = "H1 moves paddle up & down";
+                logTerminal("Switched to 1-Hand Mode", "info");
+            });
+
+            btn2Hands.addEventListener('click', () => {
+                trackingMode = 2;
+                btn2Hands.className = "btn-interactive px-3 py-1 rounded-lg bg-zinc-700 text-zinc-100 font-medium shadow-sm";
+                btn1Hand.className = "btn-interactive px-3 py-1 rounded-lg text-zinc-400 font-medium";
+                h2StatusContainer.style.display = 'flex';
+                pongTitle.textContent = "Dual-Hand Brick Breaker";
+                pongSubtitle.textContent = "H1/H2 move paddles up & down";
+                logTerminal("Switched to 2-Hands Mode", "info");
+            });
+
+            document.getElementById('start-shooter-btn').addEventListener('click', initShooterGame);
+            document.getElementById('start-pong-btn').addEventListener('click', () => { 
+                pongScore = 0; 
+                ball.x = 180; 
+                ball.y = 100;
+                ball.dx = (Math.random() > 0.5 ? 1 : -1) * 5;
+                ball.dy = (Math.random() > 0.5 ? 1 : -1) * 3.5;
+            });
+            document.getElementById('clear-paint-btn').addEventListener('click', () => paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height));
+
+            document.querySelectorAll('.wb-tool-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.wb-tool-btn').forEach(b => {
+                        b.classList.remove('bg-blue-600', 'text-white');
+                        b.classList.add('bg-zinc-800', 'text-zinc-300');
+                    });
+                    const targetBtn = e.currentTarget;
+                    targetBtn.classList.remove('bg-zinc-800', 'text-zinc-300');
+                    targetBtn.classList.add('bg-blue-600', 'text-white');
+                    activeTool = targetBtn.getAttribute('data-tool');
+                });
+            });
+
+            document.getElementById('brush-size').addEventListener('input', (e) => {
+                brushSize = parseFloat(e.target.value);
+            });
+
+            document.getElementById('download-paint-btn').addEventListener('click', () => {
+                const link = document.createElement('a');
+                link.download = 'airhand-artwork.png';
+                link.href = paintCanvas.toDataURL();
+                link.click();
+            });
+
+            document.getElementById('toggle-camera-btn').addEventListener('click', () => {
+                if (isCameraActive) stopCamera();
+                else startCamera();
+            });
+
+            document.getElementById('fullscreen-btn').addEventListener('click', () => {
+                const desktop = document.getElementById('virtual-desktop');
+                if (!desktop.classList.contains('fixed')) {
+                    desktop.classList.add('fixed', 'inset-0', 'z-40', 'p-4', 'bg-black', 'overflow-y-auto');
+                    logTerminal('Workspace maximized', 'info');
+                } else {
+                    desktop.classList.remove('fixed', 'inset-0', 'z-40', 'p-4', 'bg-black', 'overflow-y-auto');
+                    logTerminal('Workspace restored', 'info');
+                }
+            });
+
+            const toggleGameFullscreen = (windowId, canvasId) => {
+                const win = document.getElementById(windowId);
+                const canvas = document.getElementById(canvasId);
+                
+                if (!win.classList.contains('fixed')) {
+                    win.classList.remove('w-full', 'lg:w-96');
+                    win.classList.add('fixed', 'inset-0', 'w-full', 'h-full', 'z-50');
+                    
+                    canvas.classList.remove('h-40', 'h-48');
+                    canvas.classList.add('h-full');
+                    
+                    let tempCanvas = null;
+                    if (canvasId === 'paint-canvas') {
+                        tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = canvas.width;
+                        tempCanvas.height = canvas.height;
+                        const tempCtx = tempCanvas.getContext('2d');
+                        tempCtx.drawImage(canvas, 0, 0);
+                    }
+
+                    canvas.width = window.innerWidth - 32;
+                    canvas.height = window.innerHeight - (canvasId === 'paint-canvas' ? 140 : 90);
+                    
+                    if (tempCanvas && canvasId === 'paint-canvas') {
+                        paintCtx.drawImage(tempCanvas, 0, 0);
+                    }
+
+                    logTerminal(`Fullscreen enabled for ${windowId}`, 'info');
+                } else {
+                    win.classList.remove('fixed', 'inset-0', 'w-full', 'h-full', 'z-50');
+                    win.classList.add('w-full', 'lg:w-96');
+                    
+                    canvas.classList.remove('h-full');
+                    if (canvasId === 'paint-canvas') {
+                        canvas.classList.add('h-40');
+                    } else {
+                        canvas.classList.add('h-48');
+                    }
+
+                    canvas.width = 360;
+                    canvas.height = canvasId === 'paint-canvas' ? 180 : 200;
+                    logTerminal(`Fullscreen closed for ${windowId}`, 'info');
+                }
+            };
+
+            document.getElementById('fullscreen-shooter-btn').addEventListener('click', () => toggleGameFullscreen('window-shooter', 'shooter-canvas'));
+            document.getElementById('exit-shooter-fullscreen').addEventListener('click', () => toggleGameFullscreen('window-shooter', 'shooter-canvas'));
+
+            document.getElementById('fullscreen-pong-btn').addEventListener('click', () => toggleGameFullscreen('window-pong', 'pong-canvas'));
+            document.getElementById('exit-pong-fullscreen').addEventListener('click', () => toggleGameFullscreen('window-pong', 'pong-canvas'));
+
+            document.getElementById('fullscreen-paint-btn').addEventListener('click', () => toggleGameFullscreen('window-paint', 'paint-canvas'));
+            document.getElementById('exit-paint-fullscreen').addEventListener('click', () => toggleGameFullscreen('window-paint', 'paint-canvas'));
+
+            document.querySelectorAll('#color-picker-group button').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    activePaintColor = e.currentTarget.getAttribute('data-color');
+                });
+            });
+        };
+    </script>
+</body>
+</html>
