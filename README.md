@@ -1,3 +1,11 @@
+
+
+https://github.com/user-attachments/assets/05a3eb3f-744b-48ff-aeeb-c8eac88b6b51
+
+
+
+https://github.com/user-attachments/assets/afa59d1a-52d4-4722-bc19-3710efb8613d
+
 🖐️ AirHands: AI Gesture Desktop & Motion Gaming
 
 AirHands is a cutting-edge, browser-based gesture-controlled virtual desktop ecosystem powered by advanced computer vision and artificial intelligence. Built entirely using web technologies, AirHands transforms any standard computer webcam into a touchless, interactive control surface with real-time 3D hand tracking—eliminating the need for specialized motion sensors, VR controllers, or physical peripherals.
