@@ -28,4 +28,6 @@ Designed for touchless interaction, gaming, and creative expression, AirHands co
 
 🖥️ Immersive Workspace: Clean, glassmorphic virtual desktop interface featuring expandable window containers, customizable tracking sensitivity sliders, real-time FPS counters, and synthesized Web Audio sound effects.
 
+If you find this project useful or interesting, please consider giving it a ⭐! It helps a 15-year-old indie dev keep building.
+
 LIVE PREVIEW: https://someoneweird-o-o.github.io/AirHand/
